@@ -132,6 +132,7 @@
       <div class="row">
         <label>降噪強度 <input type="range" id="strength" min="1" max="5" step="0.5" value="3"> <span id="strengthVal">3</span></label>
         <label><input type="checkbox" id="sameName" checked> 同音名的其他八度也標示</label>
+        <label><input type="checkbox" id="keepAwake" checked> 收音時螢幕恆亮 <span id="wakeState" class="hint"></span></label>
       </div>
       <div class="hint">白線＝噪音門檻，音量要超過它才會辨識。周遭很吵就調高降噪強度；彈小聲抓不到就調低。</div>
     </div>
@@ -532,6 +533,44 @@
     return c;
   }
 
+  // ---------- Keep the screen on while listening ----------
+  // Uses the Screen Wake Lock API: it only stops the display from timing out (no hidden
+  // video/audio tricks), is held only while listening, and the browser drops it
+  // automatically when the page is hidden. Brightness is left to the system.
+  const keepAwakeEl = $('keepAwake'), wakeStateEl = $('wakeState');
+  const wakeSupported = 'wakeLock' in navigator;
+  let wakeLock = null, wakePending = false;
+
+  function updateWakeUI() {
+    if (!wakeSupported) wakeStateEl.textContent = '（此瀏覽器不支援，請更新系統）';
+    else if (wakeLock) wakeStateEl.textContent = '🔆 恆亮中';
+    else wakeStateEl.textContent = '';
+  }
+  async function acquireWakeLock() {
+    if (!wakeSupported || wakeLock || wakePending || !keepAwakeEl.checked || !running) return;
+    if (document.visibilityState !== 'visible') return;
+    wakePending = true;
+    try {
+      const lock = await navigator.wakeLock.request('screen');
+      if (!running || !keepAwakeEl.checked) { lock.release(); }
+      else {
+        wakeLock = lock;
+        lock.addEventListener('release', () => { if (wakeLock === lock) wakeLock = null; updateWakeUI(); });
+      }
+    } catch (e) { /* denied (e.g. battery saver) — just stay without it */ }
+    wakePending = false;
+    updateWakeUI();
+  }
+  function releaseWakeLock() {
+    if (wakeLock) { const l = wakeLock; wakeLock = null; l.release().catch(() => {}); }
+    updateWakeUI();
+  }
+  // Re-acquire after coming back to the page; some browsers also want a tap for it.
+  document.addEventListener('visibilitychange', acquireWakeLock);
+  document.addEventListener('pointerdown', acquireWakeLock);
+  keepAwakeEl.addEventListener('change', () => { if (keepAwakeEl.checked) acquireWakeLock(); else releaseWakeLock(); });
+  updateWakeUI();
+
   async function start() {
     ctx = newAudioContext();
     const audio = { echoCancellation: false, autoGainControl: false, noiseSuppression: false };
@@ -563,6 +602,7 @@
     buf = new Float32Array(N);
     det = new Detector(ctx.sampleRate, N);
     running = true;
+    acquireWakeLock();
     startBtn.textContent = '■ 停止';
     calBtn.disabled = false;
     beginCalibration();
@@ -573,6 +613,7 @@
 
   function stop() {
     running = false;
+    releaseWakeLock();
     clearInterval(timer);
     if (stream) stream.getTracks().forEach(t => t.stop());
     if (ctx) ctx.close();
