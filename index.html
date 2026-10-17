@@ -1,0 +1,699 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>吉他音名辨識</title>
+<style>
+  :root {
+    --bg: #0f2240;
+    --panel: #142b4f;
+    --panel-2: #0c1b33;
+    --line: #2a4672;
+    --text: #eef3fb;
+    --muted: #9fb3d1;
+    --accent: #ffd23f;
+    --ok: #3ddc84;
+    --warn: #ff6b5b;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font-family: "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif; }
+  body { padding: 16px; }
+  .wrap { max-width: 1100px; margin: 0 auto; }
+  h1 { margin: 0 0 4px; font-size: clamp(20px, 3.4vw, 32px); text-align: center; letter-spacing: 1px; }
+  h1 .hl { color: var(--accent); }
+  .sub { text-align: center; color: var(--muted); margin: 0 0 16px; font-size: 14px; }
+
+  .top { display: grid; grid-template-columns: 1fr 1.3fr; gap: 12px; margin-bottom: 12px; }
+  @media (max-width: 720px) { .top { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+
+  .note-display { display: flex; align-items: center; gap: 16px; min-height: 130px; }
+  .big-note { width: 112px; height: 112px; border-radius: 50%; flex: none; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; background: #22324d; border: 3px solid #39557f;
+    transition: background .15s, transform .15s, opacity .4s; }
+  .big-note .sol { font-size: 34px; font-weight: 800; line-height: 1; }
+  .big-note .let { font-size: 16px; opacity: .85; margin-top: 4px; }
+  .big-note.idle { opacity: .45; }
+  .readout { flex: 1; min-width: 0; }
+  .readout .freq { font-size: 15px; color: var(--muted); margin-bottom: 8px; font-variant-numeric: tabular-nums; }
+  .tuner { position: relative; height: 26px; border-radius: 6px; background: var(--panel-2); overflow: hidden; }
+  .tuner .zone { position: absolute; left: 45%; width: 10%; top: 0; bottom: 0; background: rgba(61,220,132,.18); }
+  .tuner .center { position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--ok); }
+  .tuner .needle { position: absolute; top: 3px; bottom: 3px; width: 6px; margin-left: -3px; left: 50%;
+    border-radius: 3px; background: var(--accent); transition: left .08s linear, opacity .3s; }
+  .tuner-labels { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 3px; }
+  .cents { font-size: 13px; margin-top: 6px; font-variant-numeric: tabular-nums; min-height: 18px; }
+
+  .controls { display: flex; flex-direction: column; gap: 10px; }
+  .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  button { font: inherit; font-weight: 700; border: 0; border-radius: 8px; padding: 10px 16px; cursor: pointer;
+    background: var(--accent); color: #1a1a1a; }
+  button.secondary { background: #2b4a7a; color: var(--text); }
+  button:disabled { opacity: .5; cursor: default; }
+  button.small { padding: 6px 10px; }
+  .mictest { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 10px;
+    display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+  .mictest .mt-row { display: grid; grid-template-columns: minmax(0, 1fr) 110px auto; gap: 8px; align-items: center; }
+  .mictest .mt-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mictest .mt-row.live .mt-name { color: var(--ok); font-weight: 700; }
+  .mictest .meter { min-width: 0; }
+  .mictest .mt-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--muted); }
+  select { font: inherit; font-size: 14px; flex: 1; min-width: 0; padding: 6px 8px; border-radius: 8px;
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--line); }
+  label { font-size: 14px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  input[type=range] { width: 150px; accent-color: var(--accent); }
+  .status { font-size: 14px; min-height: 20px; }
+  .status.warn { color: var(--warn); }
+  .status.ok { color: var(--ok); }
+  .meter { position: relative; height: 12px; background: var(--panel-2); border-radius: 6px; overflow: hidden; flex: 1; min-width: 140px; }
+  .meter .lvl { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: linear-gradient(90deg, #3ddc84, #ffd23f, #ff6b5b); }
+  .meter .gate { position: absolute; top: 0; bottom: 0; width: 2px; background: #fff; left: 0; }
+  .meter .noise { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: rgba(255,255,255,.12); }
+  .hint { font-size: 12px; color: var(--muted); }
+
+  /* fretboard */
+  .board-wrap { overflow-x: auto; }
+  .board { display: grid; grid-template-columns: minmax(54px, 74px) repeat(13, minmax(0, 1fr)); gap: 3px; min-width: 520px; }
+  .hdr { text-align: center; font-weight: 700; font-size: clamp(11px, 1.6vw, 16px); padding: 4px 0; }
+  .hdr small { display: block; font-size: 10px; color: var(--muted); font-weight: 400; }
+  .slabel { display: flex; flex-direction: column; justify-content: center; align-items: center; font-weight: 700;
+    font-size: clamp(11px, 1.5vw, 15px); line-height: 1.2; text-align: center; }
+  .slabel small { font-size: 10px; color: var(--muted); font-weight: 400; }
+  .cell { background: var(--panel-2); border: 1px solid var(--line); display: flex; align-items: center;
+    justify-content: center; padding: 4px 0; aspect-ratio: 1 / 0.92; }
+  .dot { width: 88%; aspect-ratio: 1; border-radius: 50%; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; font-weight: 700; line-height: 1.05; color: #fff; border: 2px solid rgba(255,255,255,.12);
+    transition: transform .12s, box-shadow .12s, opacity .25s, filter .25s; }
+  .dot .s { font-size: clamp(8px, 1.45vw, 15px); }
+  .dot .l { font-size: clamp(7px, 1.05vw, 11px); opacity: .8; }
+  .board.active .dot { opacity: .35; filter: saturate(.6); }
+  .board.active .dot.same { opacity: .85; filter: none; box-shadow: 0 0 0 2px rgba(255,255,255,.55); }
+  .board.active .dot.hit { opacity: 1; filter: none; transform: scale(1.12); border-color: #fff;
+    box-shadow: 0 0 0 3px var(--accent), 0 0 18px 4px rgba(255,210,63,.85); animation: pulse .9s ease-in-out infinite; }
+  @keyframes pulse { 50% { box-shadow: 0 0 0 3px var(--accent), 0 0 26px 8px rgba(255,210,63,.55); } }
+  .legend { margin-top: 10px; font-size: 12px; color: var(--muted); text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>吉他指板<span class="hl">音名辨識</span></h1>
+  <p class="sub">標準調音 E-A-D-G-B-E ・ 彈一個音，指板上就會亮起對應的唱名</p>
+
+  <div class="top">
+    <div class="card note-display">
+      <div class="big-note idle" id="bigNote"><div class="sol" id="bigSol">—</div><div class="let" id="bigLet">&nbsp;</div></div>
+      <div class="readout">
+        <div class="freq" id="freq">尚未偵測到音</div>
+        <div class="tuner"><div class="zone"></div><div class="center"></div><div class="needle" id="needle" style="opacity:0"></div></div>
+        <div class="tuner-labels"><span>-50¢ 偏低</span><span>準</span><span>偏高 +50¢</span></div>
+        <div class="cents" id="cents"></div>
+      </div>
+    </div>
+
+    <div class="card controls">
+      <div class="row">
+        <button id="startBtn">🎤 開始收音</button>
+        <button id="calBtn" class="secondary" disabled>重新校正環境噪音</button>
+      </div>
+      <div class="row">
+        <label for="micSel" style="flex:none">麥克風</label>
+        <select id="micSel"><option value="">系統預設麥克風</option></select>
+        <button id="micRefresh" class="secondary small" title="重新整理裝置清單">↻</button>
+        <button id="micTestBtn" class="secondary small">🔍 測試所有麥克風</button>
+      </div>
+      <div id="micTest" class="mictest" hidden></div>
+      <div class="status" id="status">按「開始收音」並允許使用麥克風。開始後前 1.5 秒請保持安靜，用來學習環境噪音（例如電風扇）。</div>
+      <div class="row">
+        <span class="hint" style="width:56px">輸入音量</span>
+        <div class="meter"><div class="noise" id="noiseBar"></div><div class="lvl" id="lvl"></div><div class="gate" id="gateMark"></div></div>
+      </div>
+      <div class="row">
+        <label>降噪強度 <input type="range" id="strength" min="1" max="5" step="0.5" value="3"> <span id="strengthVal">3</span></label>
+        <label><input type="checkbox" id="sameName" checked> 同音名的其他八度也標示</label>
+      </div>
+      <div class="hint">白線＝噪音門檻，音量要超過它才會辨識。周遭很吵就調高降噪強度；彈小聲抓不到就調低。</div>
+    </div>
+  </div>
+
+  <div class="card board-wrap">
+    <div class="board" id="board"></div>
+    <div class="legend">金色發光＝你彈的那個音（同一個音高可能出現在多條弦上，所以會同時亮好幾格）；白框＝同音名、不同八度</div>
+  </div>
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  // ---------- Music data ----------
+  const SOLFEGE = ['Do', '#Do', 'Re', '#Re', 'Mi', 'Fa', '#Fa', 'Sol', '#Sol', 'La', '#La', 'Si'];
+  const LETTER  = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+  const COLOR = { 0: '#c8312c', 2: '#d9782a', 4: '#b3a21a', 5: '#3f9a35', 7: '#13897f', 9: '#2f6db5', 11: '#8a3fa5' };
+  const SHARP_COLOR = '#2b313b';
+  // String 1 (high E) to string 6 (low E), as MIDI numbers of the open strings.
+  const STRINGS = [
+    { name: '第 1 弦', sub: 'E / 高音 Mi', midi: 64 },
+    { name: '第 2 弦', sub: 'B / Si',      midi: 59 },
+    { name: '第 3 弦', sub: 'G / Sol',     midi: 55 },
+    { name: '第 4 弦', sub: 'D / Re',      midi: 50 },
+    { name: '第 5 弦', sub: 'A / La',      midi: 45 },
+    { name: '第 6 弦', sub: 'E / 低音 Mi', midi: 40 },
+  ];
+  const FRETS = 12;
+  const MIDI_MIN = 40 - 1, MIDI_MAX = 64 + FRETS + 1;
+  const pc = m => ((m % 12) + 12) % 12;
+  const colorOf = m => COLOR[pc(m)] || SHARP_COLOR;
+
+  // ---------- Fretboard ----------
+  const board = document.getElementById('board');
+  const dotsByMidi = new Map();
+  const allDots = [];
+  (function buildBoard() {
+    const frag = document.createDocumentFragment();
+    frag.appendChild(Object.assign(document.createElement('div'), { className: 'hdr' }));
+    for (let f = 0; f <= FRETS; f++) {
+      const h = document.createElement('div');
+      h.className = 'hdr';
+      h.innerHTML = f === 0 ? '0品<small>(空弦)</small>' : `${f}品`;
+      frag.appendChild(h);
+    }
+    for (const s of STRINGS) {
+      const lab = document.createElement('div');
+      lab.className = 'slabel';
+      lab.innerHTML = `${s.name}<small>(${s.sub})</small>`;
+      frag.appendChild(lab);
+      for (let f = 0; f <= FRETS; f++) {
+        const m = s.midi + f;
+        const cell = document.createElement('div');
+        cell.className = 'cell';
+        const dot = document.createElement('div');
+        dot.className = 'dot';
+        dot.style.background = colorOf(m);
+        dot.dataset.midi = m;
+        dot.innerHTML = `<span class="s">${SOLFEGE[pc(m)]}</span><span class="l">(${LETTER[pc(m)]})</span>`;
+        cell.appendChild(dot);
+        frag.appendChild(cell);
+        if (!dotsByMidi.has(m)) dotsByMidi.set(m, []);
+        dotsByMidi.get(m).push(dot);
+        allDots.push(dot);
+      }
+    }
+    board.appendChild(frag);
+  })();
+
+  let shownMidi = null;
+  function highlight(midi) {
+    if (midi === shownMidi) return;
+    shownMidi = midi;
+    const same = document.getElementById('sameName').checked;
+    for (const d of allDots) {
+      const m = +d.dataset.midi;
+      d.classList.toggle('hit', midi !== null && m === midi);
+      d.classList.toggle('same', midi !== null && same && m !== midi && pc(m) === pc(midi));
+    }
+    board.classList.toggle('active', midi !== null);
+  }
+
+  // ---------- FFT ----------
+  function fft(re, im) {
+    const n = re.length;
+    for (let i = 1, j = 0; i < n; i++) {
+      let bit = n >> 1;
+      for (; j & bit; bit >>= 1) j ^= bit;
+      j ^= bit;
+      if (i < j) {
+        let t = re[i]; re[i] = re[j]; re[j] = t;
+        t = im[i]; im[i] = im[j]; im[j] = t;
+      }
+    }
+    for (let len = 2; len <= n; len <<= 1) {
+      const half = len >> 1, tw = getTwiddles(len);
+      for (let i = 0; i < n; i += len) {
+        for (let j = 0; j < half; j++) {
+          const a = i + j, b = a + half;
+          const cr = tw.cos[j], ci = tw.sin[j];
+          const xr = re[b] * cr - im[b] * ci;
+          const xi = re[b] * ci + im[b] * cr;
+          re[b] = re[a] - xr; im[b] = im[a] - xi;
+          re[a] += xr; im[a] += xi;
+        }
+      }
+    }
+  }
+  const twCache = new Map();
+  function getTwiddles(len) {
+    let t = twCache.get(len);
+    if (!t) {
+      const half = len >> 1, cos = new Float64Array(half), sin = new Float64Array(half);
+      for (let j = 0; j < half; j++) { cos[j] = Math.cos(-2 * Math.PI * j / len); sin[j] = Math.sin(-2 * Math.PI * j / len); }
+      t = { cos, sin };
+      twCache.set(len, t);
+    }
+    return t;
+  }
+
+  // ---------- Pitch detector with spectral-subtraction noise reduction ----------
+  // Autocorrelation is computed from the *denoised* power spectrum (Wiener–Khinchin),
+  // corrected for the window's own autocorrelation (Boersma), then peaks are picked
+  // McLeod-style. Stationary noise such as a fan is learned and subtracted per frequency bin.
+  class Detector {
+    constructor(sampleRate, frameSize) {
+      this.sr = sampleRate;
+      this.N = frameSize;
+      this.M = frameSize * 2;               // zero-padded so the ACF is linear, not circular
+      this.H = this.M / 2;
+      this.win = new Float64Array(this.N);
+      for (let i = 0; i < this.N; i++) this.win[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (this.N - 1));
+      this.re = new Float64Array(this.M);
+      this.im = new Float64Array(this.M);
+      this.P = new Float64Array(this.H + 1);
+      this.noise = new Float64Array(this.H + 1);
+      this.noiseRms = 0;
+      this.calSum = new Float64Array(this.H + 1);
+      this.calRms = 0;
+      this.calCount = 0;
+      this.kLo = Math.floor(60 / (this.sr / this.M));     // ignore below 60 Hz (hum, rumble)
+      this.kHi = Math.ceil(4000 / (this.sr / this.M));    // and above 4 kHz (hiss)
+      this.tMin = Math.floor(this.sr / 1400);
+      this.tMax = Math.min(Math.ceil(this.sr / 65), Math.floor(this.N / 2));
+      // Window autocorrelation, normalised to 1 at lag 0.
+      this.re.fill(0); this.im.fill(0);
+      for (let i = 0; i < this.N; i++) this.re[i] = this.win[i];
+      fft(this.re, this.im);
+      for (let k = 0; k < this.M; k++) { this.re[k] = this.re[k] ** 2 + this.im[k] ** 2; this.im[k] = 0; }
+      fft(this.re, this.im);
+      this.rw = new Float64Array(this.tMax + 2);
+      for (let t = 0; t < this.rw.length; t++) this.rw[t] = this.re[t] / this.re[0];
+    }
+
+    // Windowed power spectrum of a frame into this.P; returns the frame RMS.
+    analyze(frame) {
+      const { N, M, re, im, win, P } = this;
+      let mean = 0;
+      for (let i = 0; i < N; i++) mean += frame[i];
+      mean /= N;
+      let ss = 0;
+      for (let i = 0; i < N; i++) { const v = frame[i] - mean; ss += v * v; re[i] = v * win[i]; im[i] = 0; }
+      for (let i = N; i < M; i++) { re[i] = 0; im[i] = 0; }
+      fft(re, im);
+      for (let k = 0; k <= this.H; k++) P[k] = re[k] * re[k] + im[k] * im[k];
+      return Math.sqrt(ss / N);
+    }
+
+    startCalibration() { this.calSum.fill(0); this.calRms = 0; this.calCount = 0; }
+    addCalibration(frame) {
+      const rms = this.analyze(frame);
+      for (let k = 0; k <= this.H; k++) this.calSum[k] += this.P[k];
+      this.calRms += rms * rms;
+      this.calCount++;
+    }
+    finishCalibration() {
+      if (!this.calCount) return;
+      for (let k = 0; k <= this.H; k++) this.noise[k] = this.calSum[k] / this.calCount;
+      this.noiseRms = Math.sqrt(this.calRms / this.calCount);
+    }
+    // Slowly track a changing noise environment using the spectrum of the last analysed frame.
+    adaptNoise(rate, rms) {
+      for (let k = 0; k <= this.H; k++) this.noise[k] += rate * (this.P[k] - this.noise[k]);
+      this.noiseRms = Math.sqrt(this.noiseRms ** 2 + rate * (rms * rms - this.noiseRms ** 2));
+    }
+
+    // opts: { subtract (over-subtraction factor), gate (× noise RMS), clarity (0..1) }
+    detect(frame, opts) {
+      const rms = this.analyze(frame);
+      const { re, im, P, M, H, noise } = this;
+      const gateLevel = Math.max(this.noiseRms * opts.gate, 0.002);
+      const out = { rms, gateLevel, gateOpen: rms >= gateLevel, freq: 0, clarity: 0 };
+
+      // Spectral subtraction + band limit.
+      let eClean = 0, eNoise = 0;
+      for (let k = 0; k <= H; k++) {
+        let v = 0;
+        if (k >= this.kLo && k <= this.kHi) {
+          v = P[k] - opts.subtract * noise[k];
+          if (v < 0) v = 0;
+          eClean += v; eNoise += noise[k];
+        }
+        re[k] = v; im[k] = 0;
+        if (k > 0 && k < H) { re[M - k] = v; im[M - k] = 0; }
+      }
+      // A quiet note can sit below the raw-level gate yet stand out clearly once the
+      // learned noise is removed, so the gate also opens on denoised SNR.
+      out.snr = eNoise > 0 ? eClean / eNoise : Infinity;
+      if (!out.gateOpen && out.snr >= opts.gate * 0.5) out.gateOpen = true;
+      fft(re, im);                       // even real spectrum -> autocorrelation (unscaled)
+      const r0 = re[0];
+      if (!(r0 > 0)) return out;
+
+      const { tMin, tMax, rw } = this;
+      const nsdf = t => (re[t] / r0) / rw[t];
+
+      // McLeod-style picking: walk down the lag-0 lobe, then take the first local maximum
+      // that is close to the best one. Local maxima (not whole positive lobes) are used so
+      // the period and double-period peaks never merge, which would give octave-low errors.
+      let t = 1;
+      while (t < tMax && nsdf(t) <= nsdf(t - 1)) t++;
+      const peaks = [];
+      let prev = nsdf(t - 1), cur = nsdf(t);
+      for (; t < tMax; t++) {
+        const next = nsdf(t + 1);
+        if (cur > 0 && cur >= prev && cur > next && t >= tMin) peaks.push([t, cur]);
+        prev = cur; cur = next;
+      }
+      if (!peaks.length) return out;
+
+      let maxV = 0;
+      for (const p of peaks) if (p[1] > maxV) maxV = p[1];
+      const pick = peaks.find(p => p[1] >= 0.85 * maxV);
+      const [pt, pv] = pick;
+      const a = nsdf(pt - 1), b = pv, c = nsdf(pt + 1);
+      const den = a - 2 * b + c;
+      const shift = den !== 0 ? 0.5 * (a - c) / den : 0;
+      const tau = pt + Math.max(-0.5, Math.min(0.5, shift));
+      out.clarity = Math.min(1, b);
+      if (out.gateOpen && out.clarity >= opts.clarity) out.freq = this.sr / tau;
+      return out;
+    }
+  }
+
+  // ---------- Audio / UI ----------
+  const $ = id => document.getElementById(id);
+  const startBtn = $('startBtn'), calBtn = $('calBtn'), statusEl = $('status');
+  const strengthEl = $('strength');
+  let ctx = null, analyser = null, stream = null, det = null, buf = null;
+  let calibrating = false, calStart = 0;
+  let running = false, timer = 0;
+
+  const CAL_MS = 1500;
+  const STABLE_FRAMES = 3;     // same note this many frames in a row before showing it
+  const HOLD_MS = 800;         // keep showing a note after it stops being detected
+  const opts = { subtract: 2, gate: 3, clarity: 0.8 };
+  function applyStrength() {
+    const s = +strengthEl.value;
+    $('strengthVal').textContent = s;
+    opts.subtract = 0.8 + 0.4 * s;     // 1.2 .. 2.8
+    opts.gate = 1.4 + 0.6 * s;         // 2.0 .. 4.4 × noise level
+    opts.clarity = 0.7 + 0.03 * s;     // 0.73 .. 0.85
+  }
+  strengthEl.addEventListener('input', applyStrength);
+  applyStrength();
+  $('sameName').addEventListener('change', () => { const m = shownMidi; shownMidi = undefined; highlight(m); });
+
+  function setStatus(text, cls = '') { statusEl.textContent = text; statusEl.className = 'status ' + cls; }
+
+  // ---------- Microphone picker ----------
+  const micSel = $('micSel');
+  const MIC_KEY = 'guitarTune.micId';
+  let savedMicId = '';
+  try { savedMicId = localStorage.getItem(MIC_KEY) || ''; } catch (e) {}
+
+  async function refreshMics() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+    const devices = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audioinput');
+    const want = micSel.value || savedMicId;
+    micSel.innerHTML = '';
+    micSel.appendChild(new Option('系統預設麥克風', ''));
+    let n = 0;
+    for (const d of devices) {
+      if (d.deviceId === 'default' || d.deviceId === 'communications' || !d.deviceId) continue;
+      n++;
+      // Labels are hidden by the browser until microphone permission has been granted once.
+      micSel.appendChild(new Option(d.label || `麥克風 ${n}（允許權限後顯示名稱）`, d.deviceId));
+    }
+    micSel.value = [...micSel.options].some(o => o.value === want) ? want : '';
+  }
+  refreshMics();
+  if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+    navigator.mediaDevices.addEventListener('devicechange', refreshMics);
+  }
+  $('micRefresh').addEventListener('click', refreshMics);
+  micSel.addEventListener('change', async () => {
+    savedMicId = micSel.value;
+    try { localStorage.setItem(MIC_KEY, savedMicId); } catch (e) {}
+    if (running) { stop(); await start(); }   // switch input on the fly (recalibrates for the new mic)
+  });
+
+  function micErrorText(e) {
+    const name = e && e.name;
+    if (name === 'NotAllowedError' || name === 'SecurityError') {
+      return '麥克風權限被拒絕。請點網址列左邊的圖示允許麥克風；注意 Claude App 內建的預覽視窗無法使用麥克風，請用 Chrome 或 Edge 開啟 http://localhost:8765';
+    }
+    if (name === 'NotFoundError' || name === 'OverconstrainedError') return '找不到這支麥克風，可能已拔除，請按 ↻ 重新整理或改選其他麥克風。';
+    if (name === 'NotReadableError') return '這支麥克風正被其他程式占用或無法讀取，請關閉其他使用麥克風的程式，或改選其他麥克風。';
+    return '無法使用麥克風：' + (e && e.message ? e.message : e);
+  }
+
+  // ---------- Test all microphones: live level per device ----------
+  const micTestBtn = $('micTestBtn'), micTestEl = $('micTest');
+  let micTest = null;   // { ctx, streams, timer }
+
+  function closeMicTest() {
+    if (!micTest) return;
+    clearInterval(micTest.timer);
+    micTest.streams.forEach(s => s.getTracks().forEach(t => t.stop()));
+    micTest.ctx.close();
+    micTest = null;
+    micTestEl.hidden = true;
+    micTestEl.innerHTML = '';
+    micTestBtn.textContent = '🔍 測試所有麥克風';
+  }
+
+  micTestBtn.addEventListener('click', async () => {
+    if (micTest) { closeMicTest(); return; }
+    if (running) stop();
+    const tctx = newAudioContext();
+    try {
+      // One permission prompt first so the device names become visible.
+      const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+      s.getTracks().forEach(t => t.stop());
+    } catch (e) { tctx.close(); setStatus(micErrorText(e), 'warn'); return; }
+    await refreshMics();
+    const devices = (await navigator.mediaDevices.enumerateDevices())
+      .filter(d => d.kind === 'audioinput' && d.deviceId && d.deviceId !== 'default' && d.deviceId !== 'communications');
+    await tctx.resume();
+    micTest = { ctx: tctx, streams: [], timer: 0 };
+    micTestBtn.textContent = '✕ 結束測試';
+    micTestEl.hidden = false;
+    micTestEl.innerHTML = '<div class="mt-head"><span>對著吉他彈幾下或說話，<b>音量條會動</b>的就是有收到聲音的麥克風，按「使用」選它。</span></div>';
+    const probes = [];
+    for (const d of devices) {
+      const row = document.createElement('div');
+      row.className = 'mt-row';
+      row.innerHTML = `<span class="mt-name"></span><div class="meter"><div class="lvl"></div></div><button class="small">使用</button>`;
+      row.querySelector('.mt-name').textContent = d.label || '未命名麥克風';
+      row.querySelector('.mt-name').title = d.label;
+      row.querySelector('button').addEventListener('click', () => {
+        closeMicTest();
+        micSel.value = d.deviceId;
+        micSel.dispatchEvent(new Event('change'));
+        start();
+      });
+      micTestEl.appendChild(row);
+      const probe = { row, lvl: row.querySelector('.lvl'), an: null, buf: null, peak: 0 };
+      probes.push(probe);
+      try {
+        const s = await navigator.mediaDevices.getUserMedia({
+          audio: { deviceId: { exact: d.deviceId }, echoCancellation: false, autoGainControl: false, noiseSuppression: false },
+        });
+        if (!micTest) { s.getTracks().forEach(t => t.stop()); return; }
+        micTest.streams.push(s);
+        probe.an = tctx.createAnalyser();
+        probe.an.fftSize = 2048;
+        probe.buf = new Float32Array(2048);
+        tctx.createMediaStreamSource(s).connect(probe.an);
+      } catch (e) {
+        row.querySelector('.mt-name').textContent += '（無法開啟）';
+        row.querySelector('button').disabled = true;
+      }
+    }
+    micTest.timer = setInterval(() => {
+      for (const p of probes) {
+        if (!p.an) continue;
+        p.an.getFloatTimeDomainData(p.buf);
+        let ss = 0;
+        for (let i = 0; i < p.buf.length; i++) ss += p.buf[i] * p.buf[i];
+        const rms = Math.sqrt(ss / p.buf.length);
+        p.peak = Math.max(rms, p.peak * 0.97);
+        p.lvl.style.width = toPct(p.peak) + '%';
+        p.row.classList.toggle('live', p.peak > 0.003);
+      }
+    }, 50);
+  });
+
+  startBtn.addEventListener('click', () => { if (running) stop(); else start(); });
+
+  // iPhone/iPad Safari only lets audio start inside the tap itself, so the AudioContext is
+  // created and resumed synchronously, before anything is awaited.
+  function newAudioContext() {
+    const c = new (window.AudioContext || window.webkitAudioContext)();
+    c.resume();
+    return c;
+  }
+
+  async function start() {
+    ctx = newAudioContext();
+    const audio = { echoCancellation: false, autoGainControl: false, noiseSuppression: false };
+    if (micSel.value) audio.deviceId = { exact: micSel.value };
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('此瀏覽器不支援收音，請確認網址是 https:// 開頭');
+      stream = await navigator.mediaDevices.getUserMedia({ audio });
+    } catch (e) {
+      ctx.close(); ctx = null;
+      setStatus(micErrorText(e), 'warn');
+      return;
+    }
+    // Now that permission is granted, device names are available.
+    await refreshMics();
+    await ctx.resume();
+    const src = ctx.createMediaStreamSource(stream);
+    // Analog-style pre-filtering: cut rumble/fan hum below the low E (82 Hz) and hiss above useful harmonics.
+    const hp1 = Object.assign(ctx.createBiquadFilter(), { type: 'highpass' });
+    hp1.frequency.value = 70; hp1.Q.value = 0.707;
+    const hp2 = Object.assign(ctx.createBiquadFilter(), { type: 'highpass' });
+    hp2.frequency.value = 70; hp2.Q.value = 0.707;
+    const lp = Object.assign(ctx.createBiquadFilter(), { type: 'lowpass' });
+    lp.frequency.value = 4000; lp.Q.value = 0.707;
+    const N = ctx.sampleRate > 50000 ? 8192 : 4096;
+    analyser = ctx.createAnalyser();
+    analyser.fftSize = N;
+    analyser.smoothingTimeConstant = 0;
+    src.connect(hp1); hp1.connect(hp2); hp2.connect(lp); lp.connect(analyser);
+    buf = new Float32Array(N);
+    det = new Detector(ctx.sampleRate, N);
+    running = true;
+    startBtn.textContent = '■ 停止';
+    calBtn.disabled = false;
+    beginCalibration();
+    timer = setInterval(tick, 20);
+  }
+
+  calBtn.addEventListener('click', () => { if (running) beginCalibration(); });
+
+  function stop() {
+    running = false;
+    clearInterval(timer);
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    if (ctx) ctx.close();
+    ctx = analyser = stream = null;
+    startBtn.textContent = '🎤 開始收音';
+    calBtn.disabled = true;
+    showNote(null);
+    setStatus('已停止。');
+    $('lvl').style.width = '0';
+  }
+
+  function beginCalibration() {
+    det.startCalibration();
+    calibrating = true;
+    calStart = performance.now();
+    lastSound = calStart; silentWarned = false;
+    showNote(null);
+    setStatus('🤫 校正中…請保持安靜，不要彈琴（正在學習環境噪音）', 'warn');
+  }
+
+  // Level meter on a dB scale (-70 .. 0 dBFS).
+  const toPct = v => Math.max(0, Math.min(100, (20 * Math.log10(Math.max(v, 1e-7)) + 70) / 70 * 100));
+
+  let candidate = null, candCount = 0, lastSeen = 0, aperiodicRun = 0, freqSmooth = 0;
+  // A real microphone always has some hiss; true digital silence means a muted or virtual device.
+  let lastSound = 0, silentWarned = false;
+  function checkSilence(rms, now) {
+    if (rms > 1e-5) {
+      lastSound = now;
+      if (silentWarned) {
+        silentWarned = false;
+        if (calibrating) setStatus('🤫 收到聲音了，校正中…請保持安靜', 'warn');
+        else setStatus('✅ 收到聲音了，可以開始彈了！', 'ok');
+      }
+    } else if (!silentWarned && now - lastSound > 2500) {
+      silentWarned = true;
+      setStatus('⚠️ 這支麥克風完全沒有聲音（可能是虛擬裝置、被靜音或接錯）。請按「🔍 測試所有麥克風」找出會動的那一支。', 'warn');
+    }
+  }
+
+  function tick() {
+    if (!running) return;
+    analyser.getFloatTimeDomainData(buf);
+    const now = performance.now();
+    let ss = 0;
+    for (let i = 0; i < buf.length; i++) ss += buf[i] * buf[i];
+    checkSilence(Math.sqrt(ss / buf.length), now);
+
+    if (calibrating) {
+      det.addCalibration(buf);
+      if (now - calStart >= CAL_MS) {
+        det.finishCalibration();
+        calibrating = false;
+        if (!silentWarned) setStatus('✅ 校正完成，可以開始彈了！', 'ok');
+      }
+      $('lvl').style.width = toPct(Math.sqrt(ss / buf.length)) + '%';
+      return;
+    }
+
+    const r = det.detect(buf, opts);
+    $('lvl').style.width = toPct(r.rms) + '%';
+    $('gateMark').style.left = toPct(r.gateLevel) + '%';
+    $('noiseBar').style.width = toPct(det.noiseRms) + '%';
+
+    // Learn slowly from frames that are clearly not a note (no periodicity), so the
+    // noise profile follows a fan being switched on/off without absorbing guitar tails.
+    if (r.clarity < 0.45) aperiodicRun++; else aperiodicRun = 0;
+    if (aperiodicRun > 20) det.adaptNoise(0.02, r.rms);
+
+    let midi = null, cents = 0;
+    if (r.freq) {
+      const exact = 69 + 12 * Math.log2(r.freq / 440);
+      const m = Math.round(exact);
+      if (m >= MIDI_MIN && m <= MIDI_MAX) { midi = m; cents = (exact - m) * 100; }
+    }
+    if (midi !== null) {
+      if (midi === candidate) candCount++; else { candidate = midi; candCount = 1; freqSmooth = r.freq; }
+      freqSmooth += 0.35 * (r.freq - freqSmooth);
+      if (candCount >= STABLE_FRAMES) {
+        lastSeen = now;
+        showNote(midi, freqSmooth);
+      }
+    } else {
+      candCount = 0; candidate = null;
+    }
+    if (shownMidi !== null && now - lastSeen > HOLD_MS) showNote(null);
+  }
+
+  function showNote(midi, freq) {
+    const big = $('bigNote');
+    if (midi === null || midi === undefined) {
+      big.classList.add('idle');
+      big.style.background = '';
+      $('bigSol').textContent = '—';
+      $('bigLet').innerHTML = '&nbsp;';
+      $('freq').textContent = running && !calibrating ? '聆聽中…' : '尚未偵測到音';
+      $('needle').style.opacity = 0;
+      $('cents').textContent = '';
+      highlight(null);
+      return;
+    }
+    const exact = 69 + 12 * Math.log2(freq / 440);
+    const cents = (exact - midi) * 100;
+    const octave = Math.floor(midi / 12) - 1;
+    big.classList.remove('idle');
+    big.style.background = colorOf(midi);
+    $('bigSol').textContent = SOLFEGE[pc(midi)];
+    $('bigLet').textContent = LETTER[pc(midi)] + octave;
+    $('freq').textContent = `${freq.toFixed(1)} Hz`;
+    const needle = $('needle');
+    needle.style.opacity = 1;
+    needle.style.left = (50 + Math.max(-50, Math.min(50, cents))) + '%';
+    needle.style.background = Math.abs(cents) <= 5 ? 'var(--ok)' : 'var(--accent)';
+    $('cents').textContent = Math.abs(cents) <= 5 ? `音準 ✓ (${cents >= 0 ? '+' : ''}${cents.toFixed(0)}¢)`
+      : `${cents > 0 ? '偏高' : '偏低'} ${Math.abs(cents).toFixed(0)}¢`;
+    highlight(midi);
+  }
+
+  // Exposed for offline testing of the detector.
+  window.GuitarTuneDetector = Detector;
+})();
+</script>
+</body>
+</html>
